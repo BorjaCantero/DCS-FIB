@@ -1,0 +1,264 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>DCS - 2.2</title>
+
+    <!--- Math.js library, for matrix manipulation, and many other things--->
+    <script src=https://cdnjs.cloudflare.com/ajax/libs/mathjs/3.3.0/math.min.js></script>
+</head>
+
+<body>
+
+<h1>DCS - 2.2 Properties of conics</h1>
+
+<canvas id="canvas1" height="600" width="600" class="bezier"  style="border:1px solid #d3d3d3;"></canvas>
+<br>
+
+<p> Note: The central point indicates the position of the focus calculated getting the intersection of the reflected rays by parabola </p>
+<script type="text/javascript">
+
+    /*
+    * Part of this code is based on:
+        * http://blogs.sitepoint.com/html5-canvas-draw-quadratic-curves/
+        * http://blogs.sitepoint.com/html5-canvas-draw-bezier-curves/
+    */
+
+    var canvas1, context1, points, myTransformation, style, drag = null, draggedPoint;
+
+    
+    var rayPoints = [{ x:-115, y:200},{ x:-75, y: 200},{ x:-50, y: 200},{ x:50, y: 200},{ x:75, y: 200},{ x:115, y: 200}];
+
+    // TODO replace these points but those of the corresponding conic function (on-the-fly)
+    points = [{ x:0, y:0 }];
+
+    var tangent = [];
+
+    var SomeReflPoints = [];
+
+    var focus = [];
+
+    var colors = ['orange', 'green', 'red', 'blue', 'black', 'yellow'];
+
+    function init() {
+
+        myTransformation = function(p){return p}; //Identity transform
+
+        // default styles
+        style = {
+            curve:	{ width: 6, color: "#333" },
+            line:	{ width: 1, color: "#C00" },
+            point: { radius: 10, width: 2, color: "#900", fill: "rgba(200,200,200,0.5)", arc1: 0, arc2: 2 * Math.PI }
+        }
+
+        styleReflPoints = {
+            curve:  { width: 6, color: "#333" },
+            line:   { width: 1, color: "#C00" },
+            point: { radius: 4, width: 2, color: "#900", fill: "rgba(200,200,200,0.5)", arc1: 0, arc2: 2 * Math.PI }
+        }
+
+        // line style defaults
+        context1.lineCap = "round";
+        context1.lineJoin = "round";
+
+        // Translate origin to center of canvas
+        context1.translate(canvas1.width/2,canvas1.height/2);
+		
+		// Flip y-axis, so it looks like in standard math axes
+		context1.scale(1,-1) // Reversed y-axis
+
+        drawCanvas();
+    }
+
+
+    /**
+     Basic drawing methods
+     **/
+
+
+    // draw canvas
+    function drawCanvas() {
+        // Clear everything
+        context1.clearRect(0, 0, canvas1.width, canvas1.height);  // Clear canvas
+
+        // Background grids
+        drawGrid(context1,canvas1.width, canvas1.height); // Draw background grid
+
+        // Original points and vertices
+        drawCurve(context1, style, points); // Draw curve
+        //drawVertices(context1, style, points); // Draw vertices as circles
+        drawVertices(context1, styleReflPoints, rayPoints);
+        drawParabola();
+        drawIntersectionPoints();
+        drawVertices(context1, styleReflPoints, points);
+        doLineReflection();
+        calculateFocus();
+        drawVertices(context1, styleReflPoints, focus);
+    }
+
+
+    // Draw a background grid
+    function drawGrid(myContext,bw,bh){
+        var delta = 50; // grid cell size
+
+        var half_width = bw/2;
+        var half_height = bh/2;
+        for (var x = -half_width; x <= half_width; x += delta) {
+            myContext.moveTo(x, -half_height);
+            myContext.lineTo(x, half_height);
+        }
+
+        for (var y = -half_height; y <= half_height; y += delta) {
+            myContext.moveTo(-half_width, y);
+            myContext.lineTo(half_width , y);
+        }
+
+        myContext.lineWidth = 1;
+        myContext.strokeStyle = "lightgray";
+        myContext.stroke();
+
+   
+
+    }
+
+    // Draws a polygonal curve connecting the points, after applying the given transformation
+    function drawCurve(ctx, style, points, transformation) {
+        // The transformation is optional. If none provided, use identity transform
+        if (transformation===undefined) {
+            transformation = function(p){return p}; //Identity transform
+        }
+
+        // Draw curve
+        ctx.lineWidth = style.curve.width;
+        ctx.strokeStyle = style.curve.color;
+        ctx.beginPath();
+        var firstPoint = transformation(points[0]);
+        var currentPoint;
+        ctx.moveTo(firstPoint.x, firstPoint.y);
+        for (var i = 0; i < points.length; i++) {
+            currentPoint =  transformation(points[i]);
+            ctx.lineTo(currentPoint.x, currentPoint.y);
+            ctx.moveTo(currentPoint.x, currentPoint.y);
+        }
+        ctx.stroke();
+    }
+
+    // Draw circles around vertices to facilitate drag and drop
+    function drawVertices (ctx, style, points) {
+        for (var i = 0; i < points.length; i++) {
+            var p = points[i];
+            ctx.lineWidth = style.point.width;
+            ctx.strokeStyle = style.point.color;
+            ctx.fillStyle = style.point.fill;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, style.point.radius, style.point.arc1, style.point.arc2, true);
+            ctx.fill();
+            ctx.stroke();
+        }
+    }
+
+
+    /**
+     * Start ("main method")
+     */
+
+    // Assign canvas and context variables
+    canvas1 = document.getElementById("canvas1");
+    context1 = canvas1.getContext("2d");
+
+    init();
+
+    /**
+     * Auxiliary functions
+     */
+
+
+    function doReset () {
+        myTransformation = function(p){return p}; //Identity transform
+        drawCanvas();
+    }
+
+
+    //This function implements the parabola between x = -500 and x = 500
+    function drawParabola()
+{
+    context1.beginPath();
+    context1.strokeStyle = 'orange';
+    points = [];
+    points.push([-500,-500*-500/200]);
+    context1.moveTo(points[0].x,points[0].y);
+    for(t=-500;t<=500;t += 5)
+    {                     
+        //formual y= x * x/200;        
+        x1 = t;        
+        y1 = t * t/200;
+        var currentPoint = {x: x1, y: y1};
+        points.push(currentPoint);
+        context1.lineTo(currentPoint.x,currentPoint.y);
+        context1.moveTo(currentPoint.x,currentPoint.y);
+        context1.stroke();
+    }
+}
+
+//This function make the projection on the canvas of the ray parallel to the axis of parabola
+function drawIntersectionPoints(){
+    points = [];
+    tangent =  [];
+    for (i = 0; i < rayPoints.length; ++i){
+        context1.strokeStyle = colors[i];
+        context1.beginPath();
+        points.push({x: rayPoints[i].x, y: rayPoints[i].x * rayPoints[i].x / 200});
+        context1.moveTo(rayPoints[i].x, rayPoints[i].y);
+        context1.lineTo(points[i].x, points[i].y);
+        context1.stroke();
+    }
+    context1.stroke();   
+}
+
+//This function project on the canvas the reflected ray of the parabola
+// I calculate the tangent and make the reflection like Lab 1
+function lineReflection(m,b,i) {
+        x = parseFloat(((1 - m*m)*rayPoints[i].x + 2*m*rayPoints[i].y - 2*m*b)/(m*m + 1));
+        y = parseFloat(((m*m -1)*rayPoints[i].y + 2*m*rayPoints[i].x + 2*b)/(m*m + 1));
+        //Save some points of the ray reflected parabola to calculate the focus
+        if (i == 0 || i == 1){
+            SomeReflPoints.push({x: points[i].x - x + points[i].x, y: points[i].y - y + points[i].y})
+        }
+        tangent.push({x: x, y: y});
+        context1.strokeStyle = colors[i];
+        context1.beginPath();
+        context1.moveTo(points[i].x, points[i].y);
+        //This line set the point to make the line with the negative of the line reflection
+        context1.lineTo(points[i].x - tangent[i].x + points[i].x, points[i].y - tangent[i].y + points[i].y);
+        context1.stroke();
+    }
+
+    //Start the reflection calculating the tangent for every intersection of the rays and pass that to lineReflection function
+    function doLineReflection(){
+        for (i = 0; i < points.length; ++i){
+            m = points[i].x/100;
+            b = -points[i].x*m + points[i].y;
+            lineReflection(m,b,i);
+        }
+    }
+
+    //Calculate the focus with the saved points of the ray reflected and intersection
+    //I found some type of solution for find the focus. It has some error accumulate for every operation and it doesn't give the exact point of the focus
+    function calculateFocus(){
+        var v1 = {x: SomeReflPoints[0].x - points[0].x, y:SomeReflPoints[0].y - points[0].y};
+        var v2 = {x: SomeReflPoints[1].x - points[1].x, y:SomeReflPoints[1].y - points[1].y};
+        var dif = {x: points[1].x - points[0].x, y: points[1].y - points[0].y};
+        var t = (((dif.x*v1.y)/v1.x) - dif.y)/(v2.y-((v2.x*v1.y)/v1.x));
+        var s =  (dif.y + t*v2.y)/v1.y;
+
+        console.log("t",t);
+        console.log("s",s);
+
+        focus.push({x: points[0].x + s*v1.x, y: points[0].y + s*v1.y});
+        console.log("focus",focus[0]);
+    }
+
+</script>
+</body>
+</html>

@@ -1,0 +1,318 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>DCS - 4.1</title>
+
+    <!--- Math.js library, for matrix manipulation, and many other things--->
+    <script src="math.min.js"></script>
+</head>
+
+<body>
+
+<h1>DCS - 4.1. Cubic Bézier curve</h1>
+<canvas id="canvas1" height="600" width="800" class="bezier"  style="border:1px solid #d3d3d3;"></canvas>
+<br>
+<button type="button" onclick="add3Points()">Add control points</button>
+<button type="button" onclick="addCurve()"> Add bezier curve</button>
+<button type="button" onclick="reset()"> Reset </button>
+<br>
+<p> In this html, we can create so many different bezier curves inside the box at the top of this web. <br/>First of all we start with a default curve created by the program. 
+    You can add more control points (exactly 3) to the curves <br/>pressing the first button and the second button creates 4 new control points from a differente curve.
+You can select a curve <br/>pressing some of their points and it will change to blue colors, if u don't know where is the end of the curve you don't worry. <br/>You can see the last vertex checking the vertices and see the vertex which is green. It means that when u add new control points <br/>they will continue the curve from there. <br/> 
+Things to warm: When you add new control points to a curve you can't move the last ending point because it will smooth the <br/>curve and it will depend to before and next points. <br/>
+Be careful to put stacked points because it's difficult to the program select them.</p>
+<script type="text/javascript">
+
+    /*
+    * Part of this code is based on:
+        * http://blogs.sitepoint.com/html5-canvas-draw-quadratic-curves/
+        * http://blogs.sitepoint.com/html5-canvas-draw-bezier-curves/
+    */
+
+    var canvas1, context1, points, myTransformation, style, dragi = null, dragj = null, draggedPoint, selectedCurve = 0;
+
+    //Array of arrays that contain the control points of different bezier curves
+    points = [[{ x:100, y:300 },{ x:200, y:300 },{ x:300, y:300 },{ x:400, y:300 }]];
+
+    //Array which contains the points of bezier curve
+    var bezierCurves = [];
+
+    function init() {
+
+        myTransformation = function(p){return p}; //Identity transform
+
+        // default styles
+        style = {
+            curve:  { width: 1, color: "#333" },
+            line:   { width: 1, color: "#C00" },
+            point: { radius: 10, width: 2, color: "#900", fill: "rgba(200,200,200,0.5)", arc1: 0, arc2: 2 * Math.PI }
+        }
+        styleBezier = {
+            curve:  { width: 6, color: "#393" },
+            line:   { width: 0.5, color: "#C00" },
+            point: { radius: 10, width: 2, color: "#900", fill: "rgba(200,200,200,0.5)", arc1: 0, arc2: 2 * Math.PI }
+        }
+        styleBezierSelected = {
+            curve:  { width: 6, color: "#339" },
+            line:   { width: 0.5, color: "#C00" },
+            point: { radius: 10, width: 2, color: "#009", fill: "rgba(200,200,200,0.5)", arc1: 0, arc2: 2 * Math.PI }
+        }
+
+        // line style defaults
+        context1.lineCap = "round";
+        context1.lineJoin = "round";
+
+        // event handlers (only canvas1)
+        canvas1.onmousedown = dragStart;
+        canvas1.onmousemove = dragging;
+        canvas1.onmouseup = canvas1.onmouseout = dragEnd;
+
+        drawCanvas();
+    }
+
+
+    /**
+     Basic drawing methods
+     **/
+
+
+    // draw canvas
+    function drawCanvas() {
+        // Clear everything
+        context1.clearRect(0, 0, canvas1.width, canvas1.height);  // Clear canvas
+
+        // Background grids
+        drawGrid(context1,canvas1.width, canvas1.height); // Draw background grid
+
+        // Curve through points and vertices
+        Bezier();
+
+        for (var i = 0; i < points.length; ++i){
+            drawCurve(context1, style, points[i]);
+            if (i == selectedCurve){
+                drawVertices(context1, styleBezierSelected, points[i], i);
+                drawCurve(context1, styleBezierSelected, bezierCurves[i]); 
+            }
+            else {
+                drawVertices(context1, style, points[i], i);
+                drawCurve(context1, styleBezier, bezierCurves[i]);
+            }
+        }     
+    }
+
+
+    // Draw a background grid
+    function drawGrid(myContext,bw,bh){
+        var delta = 50; // grid cell size
+
+        for (var x = 0; x <= bw; x += delta) {
+            myContext.moveTo(x, 0);
+            myContext.lineTo(x, bh);
+        }
+
+        for (var y = 0; y <= bh; y += delta) {
+            myContext.moveTo(0, y);
+            myContext.lineTo(bw , y);
+        }
+
+        myContext.lineWidth = 1;
+        myContext.strokeStyle = "lightgray";
+        myContext.stroke();
+
+        myContext.fillStyle = "black";
+        myContext.font = "12px Arial";
+        myContext.fillText("(0,0)",2,12);
+
+    }
+
+    // Draws a polygonal curve connecting the points, after applying the given transformation
+    function drawCurve(ctx, style, pointsd, transformation) {
+        // The transformation is optional. If none provided, use identity transform
+        if (transformation===undefined) {
+            transformation = function(p){return p}; //Identity transform
+        }
+
+        // Draw curve
+        ctx.lineWidth = style.curve.width;
+        ctx.strokeStyle = style.curve.color;
+        ctx.beginPath();
+        var firstPoint = transformation(pointsd[0]);
+        var currentPoint;
+        ctx.moveTo(firstPoint.x, firstPoint.y);
+        for (var i = 0; i < pointsd.length; i++) {
+            currentPoint =  transformation(pointsd[i]);
+            ctx.lineTo(currentPoint.x, currentPoint.y);
+            ctx.moveTo(currentPoint.x, currentPoint.y);
+        }
+        ctx.stroke();
+    }
+
+    // Draw circles around vertices to facilitate drag and drop
+    function drawVertices (ctx, style, pointsd, numCurve) {
+        for (var i = 0; i < pointsd.length; i++) {
+            var p = pointsd[i];
+            ctx.lineWidth = style.point.width;
+            if ((i == pointsd.length-1) && (numCurve == selectedCurve)){
+                ctx.strokeStyle = "#090";
+            }
+            else {
+                ctx.strokeStyle = style.point.color;
+            }
+            ctx.fillStyle = style.point.fill;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, style.point.radius, style.point.arc1, style.point.arc2, true);
+            ctx.fill();
+            ctx.stroke();
+        }
+    }
+
+    /**
+     Methods to allow dragging transformedPoints around
+     **/
+
+    // start dragging
+    function dragStart(e) {
+        e = mousePos(e);
+        var dx, dy;
+        for (var i=0; i<points.length;i++){
+            for (var j=0; j<points[i].length;j++) {
+                dx = points[i][j].x - e.x;
+                dy = points[i][j].y - e.y;
+                if ((dx * dx) + (dy * dy) < style.point.radius * style.point.radius) {
+                    dragi = i;
+                    dragj = j;
+                    draggedPoint = e;
+                    canvas1.style.cursor = "move";
+                    console.log(i, j);
+                    selectedCurve = i;
+                    return;
+                }
+            }
+        }
+    }
+
+    // dragging
+    function dragging(e) {
+        if (dragi!=null) {
+            e = mousePos(e);
+            points[dragi][dragj].x += e.x - draggedPoint.x;
+            points[dragi][dragj].y += e.y - draggedPoint.y;
+            draggedPoint = e;
+            drawCanvas();
+        }
+    }
+
+    // end dragging
+    function dragEnd(e) {
+        dragi = null;
+        dragj = null;
+        canvas1.style.cursor = "default";
+        drawCanvas();
+    }
+
+    // event parser
+    function mousePos(event) {
+        event = (event ? event : window.event);
+        return {
+            x: event.pageX - canvas1.offsetLeft,
+            y: event.pageY - canvas1.offsetTop
+        }
+    }
+
+    /**
+     * Start ("main method")
+     */
+
+    // Assign canvas and context variables
+    canvas1 = document.getElementById("canvas1");
+    context1 = canvas1.getContext("2d");
+
+    init();
+
+    /**
+     * Auxiliary functions
+     */
+
+     //Function that calculate every composed bezier curve
+     function Bezier() {
+        bezierCurves = [];
+
+        //This FOR iterates different bezier curves
+        for (var i = 0; i < points.length; i++){
+            var bezierPoints = [];
+
+            //This FOR iterates differents points from a composed bezier curve
+            for (var c = 0; c < points[i].length-1; c = c + 3){
+
+                //This part calculates the smooth if it's a composed bezier and it is the vertex of the continuity
+                if (c != points[i].length - 4){
+                    ContinuitiPoint = c + 3;
+                    points[i][ContinuitiPoint] = {x: (1/2)*points[i][ContinuitiPoint+1].x + (1/2)*points[i][ContinuitiPoint-1].x, y: (1/2)*points[i][ContinuitiPoint+1].y + (1/2)*points[i][ContinuitiPoint-1].y};
+                }
+                
+                //This part calculate a selected points for t = 0 -> 1.01 (0.01 intervals)
+                for (var t = 0.0; t <= 1.01; t = t + 0.01){
+                    bezierPoints.push(calculateBezierPoint(t,c,i));
+                }    
+            }
+            bezierCurves.push(bezierPoints);
+        }
+     }
+
+     //Function that calculates the point for some t of the bezier curve
+     function calculateBezierPoint(t,c,numCurve) {
+        var startPoints = c;
+        var SumX = 0;
+        var SumY = 0;
+
+        //This FOR applicates the bezier curve function (X and Y coordinates separately)
+        for (i = 0; i <= 3; ++i){
+            PX = points[numCurve][startPoints + i].x;
+            PY = points[numCurve][startPoints + i].y;
+            ni = math.factorial(3)/(math.factorial(i)*math.factorial(3-i));
+
+            //Calculating the bernstein function to applicate to the points
+            bernstein = ni*math.pow(t,i)*math.pow(1-t,3-i);
+
+            //Calculate the summatory
+            SumX += PX * bernstein;
+            SumY += PY * bernstein;
+        }
+        result = {x: SumX, y: SumY};
+        return result;
+     }
+
+     //Function that add 3 new points to some curve selected (this points are ramdom inside the canvas)
+     function add3Points() {
+        for (var i = 0; i < 3; ++i){
+            x = math.random()*800;
+            y = math.random()*600;
+            points[selectedCurve].push({x: x, y: y});
+        }
+        drawCanvas();
+     }
+
+     //Function that create a new bezier curve (4 random new points inside the canvas) and keep this curve selected
+     function addCurve() {
+        var newPoints = [];
+        for (var i = 0; i < 4; ++i){
+            x = math.random()*800;
+            y = math.random()*600;
+            newPoints.push({x: x, y: y});
+        }
+        points.push(newPoints);
+        selectedCurve = points.length-1;
+        drawCanvas();
+     }
+
+     function reset() {
+        points = [];
+        bezierCurves = [];
+        drawCanvas();
+     }
+
+</script>
+</body>
+</html>

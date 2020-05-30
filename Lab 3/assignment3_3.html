@@ -1,0 +1,396 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>DCS - 3.3</title>
+
+    <!--- Math.js library, for matrix manipulation, and many other things--->
+    <script src=https://cdnjs.cloudflare.com/ajax/libs/mathjs/3.3.0/math.min.js></script>
+</head>
+
+<body>
+
+<h1>DCS - 3.3 Cubic Hermite interpolation</h1>
+
+<canvas id="canvas1" height="600" width="800" class="bezier"  style="border:1px solid #d3d3d3;"></canvas>
+
+<p> Select one of the exercises to execute the program. </p>
+<br>
+<button type="button" onclick="exercise3()">Exercise 3</button>
+<button type="button" onclick="negateVector(0)">Negate first vector</button>
+<button type="button" onclick="negateVector(1)">Negate second vector</button> 
+<br>
+Exercise 3 button starts the points or reset the exercise 3, next buttons change the direction of the 2 vectors that represent the tangents. <br> You can move the points to check different situations. <br> Red vertices indicates the direction of the tangents.
+<br>
+<br>
+<button type="button" onclick="exercise4_1()">Exercise 4 Part 1</button> 
+<button type="button" onclick="exercise4_2()">Exercise 4 Part 2</button>
+<br>
+<output type="text" id="result">
+
+
+<script type="text/javascript">
+
+    /*
+    * Part of this code is based on:
+        * http://blogs.sitepoint.com/html5-canvas-draw-quadratic-curves/
+        * http://blogs.sitepoint.com/html5-canvas-draw-bezier-curves/
+    */
+
+    var canvas1, context1, points, myTransformation, style, drag = null, draggedPoint;
+
+    points = [{ x:300, y:300 },{ x:200, y:200 },{ x:400, y:300 },{ x:500, y:300 }];
+
+    var tangents = [{x: 100, y: 100},{x: 100, y: 0}];
+
+    var hermite = [];
+
+    var v1 = 1;
+
+    var v2 = 1;
+
+    var exercise = 3;
+
+    function init() {
+
+        myTransformation = function(p){return p}; //Identity transform
+
+        // default styles
+        style = {
+            curve:	{ width: 6, color: "#333" },
+            line:	{ width: 1, color: "#C00" },
+            point: { radius: 10, width: 3, color: "#900", fill: "rgba(200,200,200,0.5)", arc1: 0, arc2: 2 * Math.PI }
+        }
+
+        styleDirection = {
+            curve:  { width: 3, color: "#333" },
+            line:   { width: 1, color: "#C00" },
+            point: { radius: 10, width: 3, color: "#009", fill: "rgba(200,200,200,0.5)", arc1: 0, arc2: 2 * Math.PI }
+        }
+
+        styleTHalf = {
+            curve:  { width: 6, color: "#C33" },
+            line:   { width: 1, color: "#C00" },
+            point: { radius: 10, width: 4, color: "#090", fill: "rgba(200,200,200,0.5)", arc1: 0, arc2: 2 * Math.PI }
+        }
+
+        // line style defaults
+        context1.lineCap = "round";
+        context1.lineJoin = "round";
+
+        // event handlers (only canvas1)
+        canvas1.onmousedown = dragStart;
+        canvas1.onmousemove = dragging;
+        canvas1.onmouseup = canvas1.onmouseout = dragEnd;
+
+        drawCanvas();
+    }
+
+
+    /**
+     Basic drawing methods
+     **/
+
+
+    // draw canvas
+    function drawCanvas() {
+        // Clear everything
+        context1.clearRect(0, 0, canvas1.width, canvas1.height);  // Clear canvas
+
+        // Background grids
+        drawGrid(context1,canvas1.width, canvas1.height); // Draw background grid
+
+        // Curve through points and vertices
+        if (exercise == 3){
+            vector = [points[0],points[1]];
+            if (v1 > 0){  
+                drawCurve(context1,styleDirection,vector);
+                drawVertices(context1, styleDirection, [points[1]]);
+                drawVertices(context1, style, [points[0]]);
+            }
+            else{
+                drawCurve(context1,styleDirection,vector);
+                drawVertices(context1, style, [points[1]]);
+                drawVertices(context1, styleDirection, [points[0]]);   
+            }
+            vector = [points[2],points[3]];
+            if (v2 > 0){  
+                drawCurve(context1,styleDirection,vector);
+                drawVertices(context1, styleDirection, [points[2]]);
+                drawVertices(context1, style, [points[3]]);
+            }
+            else {
+                drawCurve(context1,styleDirection,vector);
+                drawVertices(context1, style, [points[2]]);
+                drawVertices(context1, styleDirection, [points[3]]);
+            }
+            drawHermiteCurve();
+        }
+        
+    }
+
+    // Draw a background grid
+    function drawGrid(myContext,bw,bh){
+        var delta = 50; // grid cell size
+
+        for (var x = 0; x <= bw; x += delta) {
+            myContext.moveTo(x, 0);
+            myContext.lineTo(x, bh);
+        }
+
+        for (var y = 0; y <= bh; y += delta) {
+            myContext.moveTo(0, y);
+            myContext.lineTo(bw , y);
+        }
+
+        myContext.lineWidth = 1;
+        myContext.strokeStyle = "lightgray";
+        myContext.stroke();
+
+        myContext.fillStyle = "black";
+        myContext.font = "12px Arial";
+        myContext.fillText("(0,0)",2,12);
+
+    }
+
+    // Draws a polygonal curve connecting the points, after applying the given transformation
+    function drawCurve(ctx, style, points, transformation) {
+        // The transformation is optional. If none provided, use identity transform
+        if (transformation===undefined) {
+            transformation = function(p){return p}; //Identity transform
+        }
+
+        // Draw curve
+        ctx.lineWidth = style.curve.width;
+        ctx.strokeStyle = style.curve.color;
+        ctx.beginPath();
+        var firstPoint = transformation(points[0]);
+        var currentPoint;
+        ctx.moveTo(firstPoint.x, firstPoint.y);
+        for (var i = 0; i < points.length; i++) {
+            currentPoint =  transformation(points[i]);
+            ctx.lineTo(currentPoint.x, currentPoint.y);
+            ctx.moveTo(currentPoint.x, currentPoint.y);
+        }
+        ctx.stroke();
+    }
+
+    // Draw circles around vertices to facilitate drag and drop
+    function drawVertices (ctx, style, points) {
+        for (var i = 0; i < points.length; i++) {
+            var p = points[i];
+            ctx.lineWidth = style.point.width;
+            ctx.strokeStyle = style.point.color;
+            ctx.fillStyle = style.point.fill;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, style.point.radius, style.point.arc1, style.point.arc2, true);
+            ctx.fill();
+            ctx.stroke();
+        }
+    }
+
+    /**
+     Methods to allow dragging transformedPoints around
+     **/
+
+    // start dragging
+    function dragStart(e) {
+        e = mousePos(e);
+        var dx, dy;
+        for (var i=0; i<points.length;i++) {
+            dx = points[i].x - e.x;
+            dy = points[i].y - e.y;
+            if ((dx * dx) + (dy * dy) < style.point.radius * style.point.radius) {
+                drag = i;
+                draggedPoint = e;
+                canvas1.style.cursor = "move";
+                return;
+            }
+        }
+    }
+
+    // dragging
+    function dragging(e) {
+        if (drag!=null) {
+            e = mousePos(e);
+            points[drag].x += e.x - draggedPoint.x;
+            points[drag].y += e.y - draggedPoint.y;
+            draggedPoint = e;
+
+            //Calculating the 2 tangents
+            tangents[0].x = v1*(points[0].x - points[1].x);
+            tangents[0].y = v1*(points[0].y - points[1].y);
+            tangents[1].x = v2*(points[3].x - points[2].x);
+            tangents[1].y = v2*(points[3].y - points[2].y);
+
+            drawCanvas();
+        }
+    }
+
+    // end dragging
+    function dragEnd(e) {
+        drag = null;
+        canvas1.style.cursor = "default";
+        drawCanvas();
+    }
+
+    // event parser
+    function mousePos(event) {
+        event = (event ? event : window.event);
+        return {
+            x: event.pageX - canvas1.offsetLeft,
+            y: event.pageY - canvas1.offsetTop
+        }
+    }
+
+    /**
+     * Start ("main method")
+     */
+
+    // Assign canvas and context variables
+    canvas1 = document.getElementById("canvas1");
+    context1 = canvas1.getContext("2d");
+
+    init();
+
+    /**
+     * Auxiliary functions
+     */
+
+
+     //Function that calculates the cubic Hermite Polynomial of 2 points and 2 vectors (the 2 points are points[1] and points[2] and the 2 vector are)
+     function cubicHermitePolynomial(t){
+        var resultX = 0;
+        var resultY = 0;
+        
+        //Here are defined the Hermite blending functions
+        var f1X = (2*math.pow(t,3) - 3*Math.pow(t,2) + 1)*points[1].x;
+        var f1Y = (2*math.pow(t,3) - 3*Math.pow(t,2) + 1)*points[1].y;
+
+        var f2X = (-2*Math.pow(t,3) + 3*Math.pow(t,2))*points[2].x;
+        var f2Y = (-2*Math.pow(t,3) + 3*Math.pow(t,2))*points[2].y;
+
+        var f3X = (Math.pow(t,3) - 2*Math.pow(t,2) + t)*tangents[0].x;
+        var f3Y = (Math.pow(t,3) - 2*Math.pow(t,2) + t)*tangents[0].y;
+
+        var f4X = (Math.pow(t,3) - Math.pow(t,2))*tangents[1].x;
+        var f4Y = (Math.pow(t,3) - Math.pow(t,2))*tangents[1].y;
+
+        resultX = f1X + f2X + f3X + f4X;
+        resultY = f1Y + f2Y + f3Y + f4Y;
+
+        var result = {x: resultX, y: resultY};
+        return result;
+
+     }
+
+     //Function that draw the curve calling the hermite function to compute the differents points respect t
+     function drawHermiteCurve() {
+        hermite = [];
+        for (var i = 0.0; i < 1.0; i=i+0.02){
+            hermite.push(cubicHermitePolynomial(i));
+        }
+        drawCurve(context1, styleTHalf, hermite);
+     }
+
+     function drawHermiteCurve4() {
+        hermite = [];
+        for (var i = 0.0; i <= 1.01; i=i+0.01){
+            var coordinates = cubicHermitePolynomial(i);
+            hermite.push(coordinates);
+        }
+        drawCurve(context1, styleTHalf, hermite);
+        drawVertices(context1, style, points);
+     }
+
+     function negateVector(i){
+        tangents[i].x = -tangents[i].x;
+        tangents[i].y = -tangents[i].y;
+        if (i == 0){
+            v1 = -v1;
+        }
+        else v2 = -v2;
+        console.log(tangents[i]);
+        drawCanvas();
+     }
+
+     function exercise3(){
+        canvas1.onmousedown = dragStart;
+        canvas1.onmousemove = dragging;
+        canvas1.onmouseup = canvas1.onmouseout = dragEnd;
+        exercise = 3;
+        v1 = 1; 
+        v2 = 1;
+        points = [{ x:300, y:300 },{ x:200, y:200 },{ x:400, y:300 },{ x:500, y:300 }];
+        tangents = [{x: 100, y: 100},{x: 100, y: 0}];
+        hermite = [];
+        drawCanvas();
+     }
+
+     function exercise4_1(){
+        canvas1.onmousedown = null;
+        canvas1.onmousemove = null;
+        canvas1.onmouseup = canvas1.onmouseout = null;
+        exercise = 4;
+        v1 = 1;
+        v2 = 1;
+        points = [{ x:300, y:300 },{ x:200, y:200 },{ x:400, y:300 },{ x:500, y:300 }]
+        tangents = [{x: 100, y: 100},{x: 100, y: 0}];
+        hermite = [];
+
+        // Clear everything
+        context1.clearRect(0, 0, canvas1.width, canvas1.height);  // Clear canvas
+
+        // Background grids
+        drawGrid(context1,canvas1.width, canvas1.height); // Draw background grid
+
+        drawCurve(context1, styleDirection, [points[0],points[1]]);
+        drawCurve(context1, styleDirection, [points[2],points[3]]);
+        drawHermiteCurve4();
+        drawVertices(context1,styleTHalf, [cubicHermitePolynomial(0.5)]);
+        document.getElementById("result").innerHTML = "Explanation of Part 1: The result of this part is the green point, this point is calculated executing cubic Hermine polynomial function by the value t = 1/2";
+     }
+
+     function exercise4_2(){
+        canvas1.onmousedown = null;
+        canvas1.onmousemove = null;
+        canvas1.onmouseup = canvas1.onmouseout = null;
+        exercise = 4;
+        v1 = 1;
+        v2 = 1;
+        points = [{ x:300, y:300 },{ x:200, y:200 },{ x:400, y:300 },{ x:500, y:300 }];
+        hermite = [];
+        // Clear everything
+        context1.clearRect(0, 0, canvas1.width, canvas1.height);  // Clear canvas
+
+        // Background grids
+        drawGrid(context1,canvas1.width, canvas1.height); // Draw background grid
+
+        var t=1/2;
+        tangents[1].y = 0;
+        var f1Y = (2*math.pow(t,3) - 3*Math.pow(t,2) + 1)*points[1].y; 
+        var f2Y = (-2*Math.pow(t,3) + 3*Math.pow(t,2))*points[2].y;
+        var f3Y = (Math.pow(t,3) - 2*Math.pow(t,2) + t)
+        tangents[0].y = (300 - f1Y - f2Y)/f3Y;
+        tangents[0].x = tangents[0].y;
+        var f1X = (2*math.pow(t,3) - 3*Math.pow(t,2) + 1)*points[1].x;
+        var f2X = (-2*Math.pow(t,3) + 3*Math.pow(t,2))*points[2].x;
+        var f3X = (Math.pow(t,3) - 2*Math.pow(t,2) + t)*tangents[0].x;
+        var f4X = (Math.pow(t,3) - Math.pow(t,2))
+        tangents[1].x = (300 - f1X - f2X - f3X)/f4X;
+        points[0].x = points[1].x + tangents[0].x;
+        points[0].y = points[1].y + tangents[0].y;
+        points[3].x = points[2].x + tangents[1].x;
+        points[3].y = points[2].y + tangents[1].y;
+        drawHermiteCurve4();
+        drawVertices(context1,styleTHalf, [cubicHermitePolynomial(0.5)]);
+        drawCurve(context1, styleDirection, [points[0],points[1]]);
+        drawCurve(context1, styleDirection, [points[2],points[3]]);
+        document.getElementById("result").innerHTML = "Explanation of Part 2: I used the Hermite blending function to isolate the variables of the tangents and calculate them.<br>As we know the direction of the vectors, we can deduce that v1.y = 0, because the direction of v1 is horizontal.<br> So we can calculate v0.y isolating the variable from the blending function for Y.<br> Then we can know with the v0 direction that v0.x = v0.y so we can get the vector. And then we isolate the v1.x from blending function of X. RESULT: v0:("+tangents[0].x+","+tangents[0].y+") v1:("+tangents[1].x+","+tangents[1].y+")";
+     }
+
+
+</script>
+</body>
+</html>

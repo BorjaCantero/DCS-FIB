@@ -1,0 +1,373 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>DCS - 1</title>
+
+    <!--- Math.js library, for matrix manipulation, and many other things--->
+    <script src="math.min.js"></script>
+</head>
+
+<body>
+
+<h1>DCS - 1. Affine transformations</h1>
+<h2>Problem 2</h2>
+
+<canvas id="canvas1" height="600" width="400" class="bezier"  style="border:1px solid #d3d3d3;"></canvas>
+<canvas id="canvas2" height="600" width="800" class="bezier"  style="border:1px solid #d3d3d3;"></canvas>
+<br>
+<button type="button" onclick="doReset()">Reset</button>
+<br>
+<button type="button" onclick="doTransRot()">Translation + Rotation</button>
+<label>X: </label>
+<input type="number" id="transX" name="transX" step="1">
+<label>Y: </label>
+<input type="number" id="transY" name="transY" step="1">
+<label>Angle: </label>
+<input type="number" id="rot" name="rot" step="1">
+<br>
+<button type="button" onclick="doRotTrans()">Rotation + Translation</button>
+<br>
+<button type="button" onclick="doLineReflection()">Line Reflection</button>
+
+<script type="text/javascript">
+
+    /*
+    * Part of this code is based on:
+        * http://blogs.sitepoint.com/html5-canvas-draw-quadratic-curves/
+        * http://blogs.sitepoint.com/html5-canvas-draw-bezier-curves/
+    */
+
+    var canvas1, canvas2, context1, context2, points, vector, myTransformation, style, styleLine, drag = null, draggedPoint, line, draggingLine, LineReflection;
+
+    points = [{ x:-150, y:-200 },{ x:-150, y:-150 },{ x:-50, y:-150 }, { x:-50, y:200 }, { x:0, y:200 },
+        { x:0, y:-150 },{ x:100, y:-150 },{ x:100, y:-250 },{ x:-100, y:-250 },{ x:-150, y:-200 }];
+
+    vector = [{x: -50, y: -50},{x: 150, y: 150}];
+    m = 0; //pendiente de la recta
+    b = 0;
+
+
+    function init() {
+
+        myTransformation = function(p){return p}; //Identity transform
+        LineReflection = 0;
+        document.getElementById("transX").value = 0;
+        document.getElementById("transY").value = 0;
+        document.getElementById("rot").value = 0;
+        // default styles
+        style = {
+            curve:	{ width: 6, color: "#333" },
+            line:	{ width: 1, color: "#C00" },
+            point: { radius: 10, width: 2, color: "#900", fill: "rgba(200,200,200,0.5)", arc1: 0, arc2: 2 * Math.PI }
+        }
+
+        styleLine = {
+            curve:  { width: 6, color: "#939" },
+            line:   { width: 1, color: "#C00" },
+            point: { radius: 10, width: 2, color: "#090", fill: "rgba(200,200,200,0.5)", arc1: 0, arc2: 2 * Math.PI }
+        }
+
+        styleReflect = {
+            curve:  { width: 6, color: "#933" },
+            line:   { width: 1, color: "#C00" },
+            point: { radius: 10, width: 2, color: "#900", fill: "rgba(200,200,200,0.5)", arc1: 0, arc2: 2 * Math.PI }
+        }
+
+        // line style defaults
+        context1.lineCap = "round";
+        context1.lineJoin = "round";
+
+        context2.lineCap = "round";
+        context2.lineJoin = "round";
+
+        // Translate origin to center of canvas
+        context1.translate(canvas1.width/2,canvas1.height/2);
+        context2.translate(canvas2.width/2,canvas2.height/2);
+
+        // event handlers (only canvas1)
+        canvas1.onmousedown = dragStart;
+        canvas1.onmousemove = dragging;
+        canvas1.onmouseup = canvas1.onmouseout = dragEnd;
+
+        drawCanvas();
+    }
+
+
+    /**
+     Basic drawing methods
+     **/
+
+
+    // draw canvas
+    function drawCanvas() {
+        // Clear everything
+        context1.clearRect(-canvas1.width/2, -canvas1.height/2, canvas1.width, canvas1.height);  // Clear canvas
+        context2.clearRect(-canvas2.width/2, -canvas2.height/2, canvas2.width, canvas2.height);  // Clear canvas
+
+        // Background grids
+        drawGrid(context1,canvas1.width, canvas1.height); // Draw background grid
+        drawGrid(context2,canvas2.width, canvas2.height); // Draw background grid
+
+        // Original points and vertices
+        drawCurve(context1, style, points); // Draw curve
+        drawVertices(context1, style, points); // Draw vertices as circles
+
+        drawCurve(context1, styleLine, vector); // Draw curve
+        drawVertices(context1, styleLine, vector);
+
+        // Transformed points
+        if (LineReflection == 1){
+            drawCurve(context2, styleReflect, points);
+        }
+        drawCurve(context2, style, points, myTransformation); // Draw curve transformed
+        drawCurve(context2, styleLine, vector); // Draw curve
+        drawVertices(context2, styleLine, vector);
+    }
+
+
+    // Draw a background grid
+    function drawGrid(myContext,bw,bh){
+        var delta = 50; // grid cell size
+
+        var half_width = bw/2;
+        var half_height = bh/2;
+        for (var x = -half_width; x <= half_width; x += delta) {
+            myContext.moveTo(x, -half_height);
+            myContext.lineTo(x, half_height);
+        }
+
+        for (var y = -half_height; y <= half_height; y += delta) {
+            myContext.moveTo(-half_width, y);
+            myContext.lineTo(half_width , y);
+        }
+
+        myContext.lineWidth = 1;
+        myContext.strokeStyle = "lightgray";
+        myContext.stroke();
+
+        myContext.fillStyle = "black";
+        myContext.font = "12px Arial";
+        myContext.fillText("(0,0)",2,12);
+
+    }
+
+    // Draws a polygonal curve connecting the points, after applying the given transformation
+    function drawCurve(ctx, style, points, transformation) {
+        // The transformation is optional. If none provided, use identity transform
+        if (transformation===undefined) {
+            transformation = function(p){return p}; //Identity transform
+        }
+
+        // Draw curve
+        ctx.lineWidth = style.curve.width;
+        ctx.strokeStyle = style.curve.color;
+        ctx.beginPath();
+        var firstPoint = transformation(points[0]);
+        var currentPoint;
+        ctx.moveTo(firstPoint.x, firstPoint.y);
+        for (var i = 0; i < points.length; i++) {
+            currentPoint =  transformation(points[i]);
+            ctx.lineTo(currentPoint.x, currentPoint.y);
+            ctx.moveTo(currentPoint.x, currentPoint.y);
+        }
+        ctx.stroke();
+    }
+
+    // Draw circles around vertices to facilitate drag and drop
+    function drawVertices (ctx, style, points) {
+        for (var i = 0; i < points.length; i++) {
+            var p = points[i];
+            ctx.lineWidth = style.point.width;
+            ctx.strokeStyle = style.point.color;
+            ctx.fillStyle = style.point.fill;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, style.point.radius, style.point.arc1, style.point.arc2, true);
+            ctx.fill();
+            ctx.stroke();
+        }
+    }
+
+
+    /**
+     Methods to allow dragging transformedPoints around
+     **/
+
+    // start dragging
+    function dragStart(e) {
+        e = mousePos(e);
+        // Reverse translation to canvas1
+        var pos = fromCanvasToPointSpace(e);
+        var dx, dy;
+        for (var i=0; i<points.length;i++) {
+            dx = points[i].x - pos.x;
+            dy = points[i].y - pos.y;
+            if ((dx * dx) + (dy * dy) < style.point.radius * style.point.radius) {
+                drag = i;
+                draggedPoint = pos;
+                draggingLine = 0;
+                canvas1.style.cursor = "move";
+                return;
+            }
+        }
+        for (var i=0; i<vector.length;i++) {
+            dx = vector[i].x - pos.x;
+            dy = vector[i].y - pos.y;
+            if ((dx * dx) + (dy * dy) < style.point.radius * style.point.radius) {
+                drag = i;
+                draggedPoint = pos;
+                draggingLine = 1;
+                canvas1.style.cursor = "move";
+                return;
+            }
+        }
+    }
+
+    // dragging
+    function dragging(e) {
+        if (drag!=null) {
+            e = mousePos(e);
+            // Reverse translation to canvas1
+            var pos = fromCanvasToPointSpace(e);
+            if (draggingLine == 0){
+                points[drag].x += pos.x - draggedPoint.x;
+                points[drag].y += pos.y - draggedPoint.y;
+            }
+            else {
+                vector[drag].x += pos.x - draggedPoint.x;
+                vector[drag].y += pos.y - draggedPoint.y;
+            }
+            draggedPoint = pos;
+            drawCanvas();
+        }
+    }
+
+    // end dragging
+    function dragEnd(e) {
+        drag = null;
+        canvas1.style.cursor = "default";
+        drawCanvas();
+    }
+
+    // event parser
+    function mousePos(event) {
+        event = (event ? event : window.event);
+        return {
+            x: event.pageX - canvas1.offsetLeft,
+            y: event.pageY - canvas1.offsetTop
+        }
+    }
+
+    // Transforms the coordinates of a point in canvas1 to one in the space of points
+    function fromCanvasToPointSpace(canvasPoint) {
+        return {x: canvasPoint.x - canvas1.width/2 , y: canvasPoint.y - canvas1.height/2};
+    }
+
+    /**
+     * Start ("main method")
+     */
+
+    // Assign canvas and context variables
+    canvas1 = document.getElementById("canvas1");
+    context1 = canvas1.getContext("2d");
+    canvas2 = document.getElementById("canvas2");
+    context2 = canvas2.getContext("2d");
+
+    init();
+
+    /**
+     * Auxiliary functions
+     */
+
+    function doReset () {
+        myTransformation = function(p){return p}; //Identity transform
+        drawCanvas();
+    }
+
+    var rotTransFunction = function (point) {
+        var transX = parseInt(document.getElementById("transX").value);
+        var transY = parseInt(document.getElementById("transY").value);
+        var rot = parseInt(document.getElementById("rot").value);
+        var pointAsArray = [point.x, point.y];
+        var transResult = [point.x + transX, point.y + transY];
+        var radians = rot*Math.PI/180;
+        var matrix = math.matrix([[Math.cos(radians), -Math.sin(radians)], [Math.sin(radians), Math.cos(radians)]]);
+        var result = math.multiply(matrix,transResult);
+        var transformedPoint = {x: result.get([0]), y: result.get([1])};
+        return transformedPoint;
+    }
+
+    function doTransRot(){
+        myTransformation = rotTransFunction;
+        LineReflection = 0;
+        drawCanvas();
+    }
+
+    var transRotfunction = function (point) {
+        var transX = parseInt(document.getElementById("transX").value);
+        var transY = parseInt(document.getElementById("transY").value);
+        var rot = parseInt(document.getElementById("rot").value);
+        var radians = rot*Math.PI/180;
+        var matrix = math.matrix([[Math.cos(radians), -Math.sin(radians)], [Math.sin(radians), Math.cos(radians)]]);
+        var pointAsArray = [point.x, point.y];
+        var rotResult = math.multiply(matrix,pointAsArray);
+        var transformedPoint = {x: rotResult.get([0]) + transX, y: rotResult.get([1]) + transY};
+        return transformedPoint;
+    }
+
+    function doRotTrans(){
+        myTransformation = transRotfunction;
+        LineReflection = 0;
+        drawCanvas();
+    }
+
+    var lineReflection = function (point) {
+        var x = ((1 - m*m)*point.x + 2*m*point.y - 2*m*b)/(m*m + 1);
+        var y = ((m*m -1)*point.y + 2*m*point.x + 2*b)/(m*m + 1);
+        var transformedPoint = {x: x, y: y};
+        return transformedPoint;
+    }
+
+    var verticalReflection = function(point) {
+        var distancia = Math.abs(vector[0].x - point.x);
+        var transformedPoint = [];
+        if (vector[0].x <= point.x){
+            transformedPoint = {x: vector[0].x - distancia,y: point.y};
+        }
+        else {
+            transformedPoint = {x: vectore[0].x + distancia,y: point.y};
+        }
+        return transformedPoint;
+    }
+
+    var horizontalReflection = function(point) {
+        var distancia = Math.abs(vector[0].y - point.y);
+        var transformedPoint = [];
+        if (vector[0].y <= point.y){
+            transformedPoint = {x: point.x, y: vector[0].y - distancia};
+        }
+        else {
+            transformedPoint = {x: point.x, y: vector[0].y + distancia};
+        }
+        return transformedPoint;
+    }
+
+    function doLineReflection(){
+        if (vector[0].x == vector[1].x) {
+            myTransformation = verticalReflection;
+        }
+        else if (vector[0].y == vector[1].y){
+            myTransformation = horizontalReflection;
+        }
+        else {
+            m = (vector[1].y-vector[0].y)/(vector[1].x-vector[0].x);
+            b = vector[0].y - (m*vector[0].x);
+            myTransformation = lineReflection;
+        }
+        LineReflection = 1;
+        drawCanvas();
+    }
+</script>
+</body>
+</html>
